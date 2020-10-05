@@ -24,6 +24,7 @@
 #include "jcontext.h"
 #include "jerryscript-port.h"
 #include "lit-char-helpers.h"
+#include "ecma-symbol-object.h"
 
 #if ENABLED (JERRY_DEBUGGER)
 
@@ -568,6 +569,15 @@ jerry_debugger_send_eval (const lit_utf8_byte_t *eval_string_p, /**< evaluated s
       return true;
     }
 
+#if ENABLED (JERRY_ESNEXT)
+    if (ecma_is_value_symbol (result))
+    {
+      ecma_value_t to_string_value = ecma_get_symbol_descriptive_string (result);
+      ecma_free_value (result);
+      result = to_string_value;
+    }
+    else
+#endif /* ENABLED (JERRY_ESNEXT) */
     if (!ecma_is_value_string (result))
     {
       ecma_string_t *str_p = ecma_op_to_string (result);

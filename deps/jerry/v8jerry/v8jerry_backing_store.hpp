@@ -39,7 +39,8 @@ public:
         , m_deleter(deleter)
         , m_deleterData(deleterData)
         , m_isShared(isShared)
-    {}
+    {
+    }
 
     void* data() const {
         return m_data;

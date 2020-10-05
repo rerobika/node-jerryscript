@@ -167,7 +167,13 @@ JerryValue* JerryValue::NewObject(void) {
 
 /* static */
 JerryValue* JerryValue::NewArrayBuffer(JerryBackingStore *backingStore) {
-    jerry_value_t buffer = jerry_create_arraybuffer_external(backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
+    jerry_value_t buffer;
+    if (backingStore->byteLength() == 0 || backingStore->data() == NULL)
+    {
+      // backingStore->setEmptyBuffer()
+    }
+    buffer = jerry_create_arraybuffer_external(backingStore->byteLength(), (uint8_t*)backingStore->data(), NULL);
+
 
     jerry_set_object_native_pointer(buffer, backingStore, &JerryV8BackingStoreInfo);
 

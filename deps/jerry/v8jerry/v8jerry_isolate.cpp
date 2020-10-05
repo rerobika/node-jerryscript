@@ -12,6 +12,15 @@
 #include "v8jerry_utils.hpp"
 
 #define DEBUG_PRINT 1
+#define JERRY_DEBUGGER 0
+
+#if DEBUG_PRINT
+#include "jerryscript-ext/handler.h"
+#endif
+
+#if JERRY_DEBUGGER
+#include "jerryscript-ext/debugger.h"
+#endif
 
 JerryIsolate* JerryIsolate::s_currentIsolate = nullptr;
 
@@ -25,96 +34,6 @@ JerryIsolate::JerryIsolate(const v8::Isolate::CreateParams& params) {
 #if DEBUG_PRINT
 
 static jerry_value_t
-jerryx_handler_print (const jerry_value_t func_obj_val,
-                      const jerry_value_t this_p,
-                      const jerry_value_t args_p[],
-                      const jerry_length_t args_cnt) {
-  (void) func_obj_val; /* unused */
-  (void) this_p; /* unused */
-
-  const char * const null_str = "\\u0000";
-
-  jerry_value_t ret_val = jerry_create_undefined ();
-
-  for (jerry_length_t arg_index = 0; arg_index < args_cnt; arg_index++)
-  {
-    jerry_value_t str_val;
-
-    if (jerry_value_is_symbol (args_p[arg_index]))
-    {
-      str_val = jerry_get_symbol_descriptive_string (args_p[arg_index]);
-    }
-    else
-    {
-      str_val = jerry_value_to_string (args_p[arg_index]);
-    }
-
-    if (jerry_value_is_error (str_val))
-    {
-      /* There is no need to free the undefined value. */
-      ret_val = str_val;
-      break;
-    }
-
-    jerry_length_t length = jerry_get_utf8_string_length (str_val);
-    jerry_length_t substr_pos = 0;
-    jerry_char_t substr_buf[256];
-
-    do
-    {
-      jerry_size_t substr_size = jerry_substring_to_utf8_char_buffer (str_val,
-                                                                      substr_pos,
-                                                                      length,
-                                                                      substr_buf,
-                                                                      256 - 1);
-
-      jerry_char_t *buf_end_p = substr_buf + substr_size;
-
-      /* Update start position by the number of utf-8 characters. */
-      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
-      {
-        /* Skip intermediate utf-8 octets. */
-        if ((*buf_p & 0xc0) != 0x80)
-        {
-          substr_pos++;
-        }
-      }
-
-      if (substr_pos == length)
-      {
-        *buf_end_p++ = (arg_index < args_cnt - 1) ? ' ' : '\n';
-      }
-
-      for (jerry_char_t *buf_p = substr_buf; buf_p < buf_end_p; buf_p++)
-      {
-        char chr = (char) *buf_p;
-
-        if (chr != '\0')
-        {
-          jerry_port_print_char (chr);
-          continue;
-        }
-
-        for (jerry_size_t null_index = 0; null_str[null_index] != '\0'; null_index++)
-        {
-          jerry_port_print_char (null_str[null_index]);
-        }
-      }
-    }
-    while (substr_pos < length);
-
-    jerry_release_value (str_val);
-  }
-
-  if (args_cnt == 0 || jerry_value_is_error (ret_val))
-  {
-    jerry_port_print_char ('\n');
-  }
-
-  return ret_val;
-}
-
-static jerry_value_t
 jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
                                  const jerry_value_t this_p,
                                  const jerry_value_t args_p[],
@@ -126,7 +45,7 @@ jerryx_handler_string_normalize (const jerry_value_t func_obj_val,
   return jerry_acquire_value(this_p);
 }
 
-static void jerryx_handler_register (const jerry_char_t *name_p, jerry_value_t object_value,
+static void helper_handler_register (const jerry_char_t *name_p, jerry_value_t object_value,
                                      jerry_external_handler_t handler_p) {
   jerry_value_t function_name_val = jerry_create_string (name_p);
   jerry_value_t function_val = jerry_create_external_function (handler_p);
@@ -148,14 +67,14 @@ static void jerryx_handler_register (const jerry_char_t *name_p, jerry_value_t o
   jerry_release_value (result_val);
 }
 
-static void jerryx_handler_register_global (const jerry_char_t *name_p,
+static void helper_handler_register_global (const jerry_char_t *name_p,
                                             jerry_external_handler_t handler_p) {
   jerry_value_t global_obj_val = jerry_get_global_object();
-  jerryx_handler_register(name_p, global_obj_val, handler_p);
+  helper_handler_register(name_p, global_obj_val, handler_p);
   jerry_release_value(global_obj_val);
 }
 
-static void jerryx_handler_register_string (const jerry_char_t *name_p,
+static void helper_handler_register_string (const jerry_char_t *name_p,
                                             jerry_external_handler_t handler_p) {
   jerry_value_t global_obj_val = jerry_get_global_object();
   jerry_value_t name_val = jerry_create_string((const jerry_char_t *) "String");
@@ -168,7 +87,7 @@ static void jerryx_handler_register_string (const jerry_char_t *name_p,
   jerry_release_value (name_val);
   jerry_release_value (string_val);
 
-  jerryx_handler_register (name_p, prototype_val, handler_p);
+  helper_handler_register (name_p, prototype_val, handler_p);
   jerry_release_value (prototype_val);
 }
 
@@ -177,10 +96,17 @@ static void jerryx_handler_register_string (const jerry_char_t *name_p,
 void JerryIsolate::InitializeJerryIsolate(const v8::Isolate::CreateParams& params) {
     m_terminated = false;
     jerry_init(JERRY_INIT_EMPTY/* | JERRY_INIT_MEM_STATS*/);
-#if DEBUG_PRINT
-    jerryx_handler_register_global((const jerry_char_t *)"print", jerryx_handler_print);
+
+#if JERRY_DEBUGGER
+    bool protocol = jerryx_debugger_tcp_create (5001);
+    jerryx_debugger_after_connect (protocol && jerryx_debugger_ws_create ());
 #endif
-    jerryx_handler_register_string((const jerry_char_t *)"normalize", jerryx_handler_string_normalize);
+
+
+#if DEBUG_PRINT
+    helper_handler_register_global((const jerry_char_t *)"print", jerryx_handler_print);
+#endif
+    helper_handler_register_string((const jerry_char_t *)"normalize", jerryx_handler_string_normalize);
 
     m_fatalErrorCallback = nullptr;
 

@@ -1,32 +1,32 @@
 {
-  'variables': {
-    'generated_sources': [
-      '<(SHARED_INTERMEDIATE_DIR)/jerry/jerryscript.c',
-      '<(SHARED_INTERMEDIATE_DIR)/jerry/jerryscript-config.h',
-      '<(SHARED_INTERMEDIATE_DIR)/jerry/jerryscript.h',
-      '<(SHARED_INTERMEDIATE_DIR)/jerry/jerryscript-port-default.c',
-      '<(SHARED_INTERMEDIATE_DIR)/jerry/jerryscript-port-default.h',
-    ]
-   },
   'targets': [
     {
-      'target_name': 'jerrysource',
-      'type': 'none',
+      'target_name': 'jerrylib',
+      'type': 'static_library',
       'actions': [
         {
-          'action_name': 'jerrysource',
+          'action_name': 'jerrylib',
           'inputs': [
-            'jerryscript/tools/srcgenerator.py',
+            'jerryscript/tools/build.py',
           ],
           'outputs': [
-            '<@(generated_sources)',
+            'jerryscript/build/lib/libjerry-core.a',
+            'jerryscript/build/lib/libjerry-ext.a',
+            'jerryscript/build/lib/libjerry-port-default.a',
           ],
           'action': [
             'python',
-            'jerryscript/tools/srcgenerator.py',
-            '--output-dir=<(SHARED_INTERMEDIATE_DIR)/jerry/',
-            '--jerry-core',
-            '--jerry-port-default',
+            'jerryscript/tools/build.py',
+            '--cmake-param=-DCMAKE_C_COMPILER_WORKS=TRUE',
+            '--compile-flag=-g',
+            '--debug',
+            '--clean',
+            '--error-messages=on',
+            '--line-info=on',
+            '--cpointer-32bit=on',
+            '--mem-heap=16384',
+            '--jerry-debugger=on',
+            '--strip=OFF'
           ],
         },
       ],
@@ -35,7 +35,7 @@
       'target_name': 'jerryapi',
       'type': 'static_library',
       'dependencies': [
-        'jerryscript.gyp:jerrysource',
+        'jerryscript.gyp:jerrylib',
          '<(icu_gyp_path):icui18n',
          '<(icu_gyp_path):icuuc',
       ],
@@ -43,22 +43,19 @@
          'include',
          'jerryscript/jerry-core/include',
          'jerryscript/jerry-port/default/include',
+         'jerryscript/jerry-ext/include',
          'v8jerry',
       ],
-      'defines': [
-        'JERRY_CPOINTER_32_BIT=1',
-        'JERRY_GLOBAL_HEAP_SIZE=16384',
-        'JERRY_LINE_INFO=1',
-        'JERRY_ERROR_MESSAGES=1',
-        'JERRY_V8_DUMP_BACKTRACE=1',
-      ],
+      'link_settings': {
+        'libraries': [
+                       '-L<(PRODUCT_DIR)/../../deps/jerry/jerryscript/build/lib -ljerry-core -ljerry-ext -ljerry-port-default'
+                       ],
+      },
       'sources': [
         'api.cc',
         'api_ext.cc',
         'inspector.cc',
         'platform.cc',
-
-        '<@(generated_sources)',
 
         'v8jerry/v8jerry_allocator.cpp',
         'v8jerry/v8jerry_allocator.hpp',
